@@ -4,18 +4,41 @@
 // library. Node 22+, standard library only, no network, no timestamps and
 // no randomness at run time, so two runs write byte-identical output.
 //
+// v2: the game is one classic script (game/game.js, loaded by a plain
+// <script> tag), so game/index.html opens straight from file:// as well as
+// from a server. This entrypoint refuses a stale layout — a leftover
+// game/src directory or a missing game.js fails the build here, not at
+// grading.
+//
 // Serve the game locally first with `node serve.ts`, then open
 // http://localhost:8080. Outside the grader's container, MAKEFUN_OUTPUT_DIR
 // stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+// v2 layout guard: one classic script, no leftover module directory.
+if (!existsSync(join(here, 'game', 'game.js'))) {
+  throw new Error('missing game/game.js — the v2 single-script layout is incomplete');
+}
+if (existsSync(join(here, 'game', 'src'))) {
+  throw new Error('stale game/src directory present — v2 ships game/game.js only');
+}
+// The file:// fix only works if index.html loads the classic script: a
+// module tag would bring the CORS block back, so fail the build on it.
+const entryHtml = readFileSync(join(here, 'game', 'index.html'), 'utf8');
+if (!entryHtml.includes('<script src="./game.js">')) {
+  throw new Error('game/index.html does not load ./game.js as a classic script');
+}
+if (entryHtml.includes('type="module"')) {
+  throw new Error('game/index.html still uses a module script — file:// would be blocked');
+}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });

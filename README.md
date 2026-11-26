@@ -18,11 +18,15 @@ around the archipelago, then land back on the runway for a mission rating.
 - **Score it:** 100 points per ring plus a bullseye bonus up to 60, +300 for
   landing after all 10 rings, and an S/A/B mission rating on your time.
 - **Read it:** five analogue dials (airspeed, attitude, compass, altimeter,
-  vertical speed), speed and altitude tapes, heading tape, pitch ladder,
-  guidance diamond to the next ring or the runway, and a WebAudio engine hum
-  generated in code.
+  vertical speed), speed and altitude tapes, heading tape, pitch ladder
+  clipped to the sky above the instrument panel, guidance diamond to the
+  next ring or the runway, and a WebAudio engine hum generated in code.
 
 ## Run it
+
+Double-click `game/index.html` — it plays straight from `file://` in desktop
+Chrome (the game is one classic script, `game/game.js`, no modules, no
+server needed). Or serve it:
 
 ```sh
 node serve.ts
@@ -30,8 +34,23 @@ node serve.ts
 
 Then open http://localhost:8080 in a browser.
 
-Deterministic screenshot scenes: `?demo=1` (takeoff), `?demo=2` (rings),
-`?demo=3` (landing approach), `?demo=4` (cockpit, final ring).
+Deterministic staged screenshot scenes: `?demo=1` (takeoff), `?demo=2`
+(rings), `?demo=3` (landing approach, runway in frame), `?demo=4` (cockpit,
+final approach after all 10 rings). The four screenshots are deterministic
+staged scenes rendered live by the game code, with clock and score kept
+consistent across them (0:45 / 0 → 1:35 / 400 → 2:20 / 880 → 3:05 / 1180) —
+not a recording of one played run.
+
+## v2 changes
+
+- Single classic script (`game/game.js`): the game now opens from `file://`
+  with no server and no module/CORS block.
+- Landing scene re-staged close to the runway so the strip fills the frame.
+- Cockpit scene re-staged after the last ring is cleared, on final approach
+  with land ahead; the toast now matches the frame.
+- Pitch ladder clipped to the sky above the instrument panel — no rung or
+  label crosses a dial.
+- Code implemented fresh in-session from the user's design reference.
 
 ---
 
