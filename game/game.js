@@ -1426,7 +1426,7 @@ function drawMinimap(ctx, U, S, W) {
 /** Big red PULL UP while the ground is only seconds away at the current sink. */
 function drawPullUp(ctx, U, S, W, H) {
   const p = S.plane;
-  if (p.onGround || p.crashed > 0) return;
+  if (p.crashed > 0 || p.onGround) return;
   const sink = -p.vy;
   if (sink <= 6) return;
   const clearance = p.y - groundHeight(p.x, p.z);
@@ -2344,16 +2344,15 @@ function applyDemo(S, n) {
   if (n === 3) {
     // Cockpit, all 10 rings done, on final approach with the strip ahead.
     baseState(S, 185, 10);
-    placePlane(S, 24, 118, -880, 0, -0.02, 0.05, 62, 0.62);
+    placePlane(S, 24, 121, -880, 0, -0.02, 0.05, 63, 0.62);
     S.view = 'cockpit';
-    S.mission.toast = 'All rings done — land on the runway';
-    S.mission.toastT = 2.6;
+    setToast(S, 'All rings done — land on the runway', 2.6);
     return;
   }
   // Demo 4: short final — 260 m out on the centreline, 14 m above the
   // strip, so the runway fills the frame ahead of the plane.
   baseState(S, 201, 10);
-  placePlane(S, 10, 26, -260, 0, -0.03, 0, 46, 0.3);
+  placePlane(S, 10, 25, -275, 0, -0.03, 0, 46, 0.3);
   S.mission.toast = 'Short final';
   S.mission.toastT = 2.6;
 }
