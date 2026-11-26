@@ -4,7 +4,7 @@
 // library. Node 22+, standard library only, no network, no timestamps and
 // no randomness at run time, so two runs write byte-identical output.
 //
-// v2: the game is one classic script (game/game.js, loaded by a plain
+// v2/v3: the game is one classic script (game/game.js, loaded by a plain
 // <script> tag), so game/index.html opens straight from file:// as well as
 // from a server. This entrypoint refuses a stale layout — a leftover
 // game/src directory or a missing game.js fails the build here, not at

@@ -35,22 +35,32 @@ node serve.ts
 Then open http://localhost:8080 in a browser.
 
 Deterministic staged screenshot scenes: `?demo=1` (takeoff), `?demo=2`
-(rings), `?demo=3` (landing approach, runway in frame), `?demo=4` (cockpit,
-final approach after all 10 rings). The four screenshots are deterministic
-staged scenes rendered live by the game code, with clock and score kept
-consistent across them (0:45 / 0 → 1:35 / 400 → 2:20 / 880 → 3:05 / 1180) —
-not a recording of one played run.
+(rings), `?demo=3` (cockpit, final approach after all 10 rings), `?demo=4`
+(short final, runway filling the frame). The four screenshots are staged
+scenes rendered live by the game code, in chronological order, with clock and
+score that the real scoring rules can produce (0:45 / 0 → 1:35 / 554 after 4
+rings → 3:05 / 1390 after 10 rings → 3:21 / short final) — not a recording of
+one played run.
 
-## v2 changes
+## v3 changes
 
-- Single classic script (`game/game.js`): the game now opens from `file://`
-  with no server and no module/CORS block.
-- Landing scene re-staged close to the runway so the strip fills the frame.
-- Cockpit scene re-staged after the last ring is cleared, on final approach
-  with land ahead; the toast now matches the frame.
-- Pitch ladder clipped to the sky above the instrument panel — no rung or
-  label crosses a dial.
-- Code implemented fresh in-session from the user's design reference.
+- **Minimap** (top right): north-up island picture with the runway, the ring
+  route, cleared / next / remaining rings and the plane's heading.
+- **PULL UP** warning when the ground is under ~4.5 s away at the current sink.
+- Altitude and speed tapes no longer draw negative values on the ground.
+- HUD text has a soft shadow and the title block a backing panel, so it stays
+  readable over clouds and bright terrain.
+- Staged scenes re-ordered and re-scored: cockpit final approach (3:05) now
+  comes before the short-final landing frame (3:21), and every score is
+  computed from the real rules (100 + bullseye bonus per ring).
+- Play-tested in headless Chromium from `file://`: take-off, ring pass,
+  crash + respawn and a full landing to "Mission complete", no console errors.
+
+## Provenance
+
+Built with AI assistance. An earlier single-file prototype of the same game
+informed the design, constants and structure; this is a restructured
+re-implementation of it, not a from-scratch design.
 
 ---
 

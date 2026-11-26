@@ -1299,6 +1299,142 @@ function drawFrame(ctx, S) {
   return view;
 }
 
+/* ---------------- minimap and PULL UP ---------------- */
+
+// The minimap picture is painted once into an offscreen canvas and reused
+// every frame; only the route, the ring marks and the plane arrow move.
+let mapPic = null;
+
+/** North-up island picture: sea, sand, grass, rock and snow from groundHeight. */
+function paintMapPicture(S) {
+  let half = 3200;
+  for (const r of S.course) half = Math.max(half, Math.abs(r.x), Math.abs(r.z));
+  half = Math.ceil((half * 1.15) / 100) * 100;
+  const N = 96;
+  const map = document.createElement('canvas');
+  map.width = N;
+  map.height = N;
+  const c2 = map.getContext('2d');
+  const img = c2.createImageData(N, N);
+  for (let j = 0; j < N; j += 1) {
+    for (let i = 0; i < N; i += 1) {
+      const x = ((i + 0.5) / N * 2 - 1) * half;
+      const z = (1 - (j + 0.5) / N * 2) * half;
+      const h = groundHeight(x, z);
+      let col;
+      if (h <= 0.2) col = [24, 88, 132];
+      else if (h < 12) col = [210, 196, 152];
+      else if (h < 150) col = [96, 140, 74];
+      else if (h < 360) col = [128, 116, 102];
+      else col = [238, 242, 246];
+      const k = (j * N + i) * 4;
+      img.data[k] = col[0];
+      img.data[k + 1] = col[1];
+      img.data[k + 2] = col[2];
+      img.data[k + 3] = 255;
+    }
+  }
+  c2.putImageData(img, 0, 0);
+  return { map, half };
+}
+
+function drawMinimap(ctx, U, S, W) {
+  if (!mapPic) mapPic = paintMapPicture(S);
+  const size = 132 * U;
+  const x0 = W - 14 * U - size;
+  const y0 = 80 * U;
+  const px = (x) => x0 + (clamp(x / mapPic.half, -1, 1) * 0.5 + 0.5) * size;
+  const pz = (z) => y0 + (0.5 - clamp(z / mapPic.half, -1, 1) * 0.5) * size;
+  const m = S.mission;
+  const p = S.plane;
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  ctx.drawImage(mapPic.map, x0, y0, size, size);
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.rect(x0, y0, size, size);
+  ctx.clip();
+  // Runway: a short white bar on the centreline.
+  ctx.strokeStyle = '#f4f8fa';
+  ctx.lineWidth = 2 * U;
+  ctx.beginPath();
+  ctx.moveTo(px(0), pz(-WORLD.RUNWAY_HALF_LEN));
+  ctx.lineTo(px(0), pz(WORLD.RUNWAY_HALF_LEN));
+  ctx.stroke();
+  // Dashed route: ring to ring, then home to the strip.
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3 * U, 3 * U]);
+  ctx.beginPath();
+  S.course.forEach((r, i) => {
+    if (i === 0) ctx.moveTo(px(r.x), pz(r.z));
+    else ctx.lineTo(px(r.x), pz(r.z));
+  });
+  ctx.lineTo(px(0), pz(0));
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Ring marks: cleared green, next one amber and pulsing, rest pale blue.
+  const pulse = (1 + Math.sin(S.now * 0.006)) / 2;
+  S.course.forEach((r, i) => {
+    const cx = px(r.x);
+    const cy = pz(r.z);
+    if (i < m.cleared) {
+      ctx.fillStyle = '#63dc92';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.6 * U, 0, TAU);
+      ctx.fill();
+    } else if (i === m.cleared) {
+      ctx.strokeStyle = '#ffb54a';
+      ctx.lineWidth = 2 * U;
+      ctx.beginPath();
+      ctx.arc(cx, cy, (3.6 + 1.8 * pulse) * U, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = '#ffb54a';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.4 * U, 0, TAU);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#7fd2ff';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.4 * U, 0, TAU);
+      ctx.fill();
+    }
+  });
+  // Plane arrow, rotated so its nose follows the heading (north is up).
+  ctx.save();
+  ctx.translate(px(p.x), pz(p.z));
+  ctx.rotate(p.yaw);
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#0b1620';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(0, -7 * U);
+  ctx.lineTo(4.4 * U, 5 * U);
+  ctx.lineTo(0, 2 * U);
+  ctx.lineTo(-4.4 * U, 5 * U);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(141,255,217,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x0, y0, size, size);
+  text(ctx, 'N', x0 + 10 * U, y0 + 11 * U, 11 * U, '#ffffff', 'center', 700);
+}
+
+/** Big red PULL UP while the ground is only seconds away at the current sink. */
+function drawPullUp(ctx, U, S, W, H) {
+  const p = S.plane;
+  if (p.onGround || p.crashed > 0) return;
+  const sink = -p.vy;
+  if (sink <= 6) return;
+  const clearance = p.y - groundHeight(p.x, p.z);
+  if (clearance / sink >= 4.5) return;
+  if (Math.sin(S.now * 0.018) < -0.25) return; // blink: mostly on, brief gaps
+  text(ctx, 'PULL UP', W / 2, H * 0.31, 34 * U, '#ff5340', 'center', 800);
+}
+
 /* ---------------- cockpit instruments and HUD ---------------- */
 
 const HUD = '#8dffd9';
@@ -1306,15 +1442,22 @@ const AMBER = '#ffb54a';
 const PANEL = 'rgba(5,14,20,0.46)';
 
 function text(ctx, s, x, y, size, color, align = 'center', weight = 600) {
+  ctx.save();
   ctx.font = `${weight} ${size}px system-ui, "Segoe UI", Roboto, Arial, sans-serif`;
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(2,12,18,0.8)';
+  ctx.shadowBlur = 2 + size * 0.22;
+  ctx.shadowOffsetY = 1;
   ctx.fillText(s, x, y);
+  ctx.restore();
 }
 
-/** One scrolling tape (speed or altitude) with a boxed current value. */
-function drawTape(ctx, U, x, y, h, val, minor, major, pxPer, side, label, fmt) {
+/** One scrolling tape (speed or altitude) with a boxed current value.
+ *  floor clamps the tape (and the boxed value) so it never shows a
+ *  negative reading — pass 0 for tapes that sit at zero on the ground. */
+function drawTape(ctx, U, x, y, h, val, minor, major, pxPer, side, label, fmt, floor = -Infinity) {
   const w = 96 * U;
   ctx.save();
   ctx.fillStyle = PANEL;
@@ -1322,7 +1465,7 @@ function drawTape(ctx, U, x, y, h, val, minor, major, pxPer, side, label, fmt) {
   ctx.beginPath();
   ctx.rect(x - w / 2, y - h / 2, w, h);
   ctx.clip();
-  const lo = val - h / 2 / pxPer;
+  const lo = Math.max(val - h / 2 / pxPer, floor);
   const hi = val + h / 2 / pxPer;
   ctx.strokeStyle = HUD;
   ctx.lineWidth = 1.3;
@@ -1350,7 +1493,7 @@ function drawTape(ctx, U, x, y, h, val, minor, major, pxPer, side, label, fmt) {
   ctx.rect(x - 38 * U, y - 13 * U, 76 * U, 26 * U);
   ctx.fill();
   ctx.stroke();
-  text(ctx, fmt(val), x, y + 1, 17 * U, '#eafff7', 'center', 700);
+  text(ctx, fmt(Math.max(val, floor)), x, y + 1, 17 * U, '#eafff7', 'center', 700);
   text(ctx, label, x, y - h / 2 - 11 * U, 11 * U, HUD, 'center', 600);
 }
 
@@ -1860,11 +2003,15 @@ function drawHud(ctx, S, view) {
   drawLadder(ctx, U, S, view, skyBottom);
   drawHeadingTape(ctx, U, S, W);
   const tapeY = H * 0.42 - 10 * U;
-  drawTape(ctx, U, CX - 250 * U, tapeY, 200 * U, p.speed * 3.6, 10, 50, 1.1 * U, 1, 'KM/H', (v) => String(Math.round(v)));
-  drawTape(ctx, U, CX + 250 * U, tapeY, 200 * U, p.y, 20, 100, 0.55 * U, -1, 'ALT M', (v) => String(Math.round(v)));
+  drawTape(ctx, U, CX - 250 * U, tapeY, 200 * U, p.speed * 3.6,
+    10, 50, 1.1 * U, 1, 'KM/H', (v) => String(Math.round(v)), 0);
+  drawTape(ctx, U, CX + 250 * U, tapeY, 200 * U, p.y,
+    20, 100, 0.55 * U, -1, 'ALT M', (v) => String(Math.round(v)), 0);
   const agl = Math.max(0, p.y - groundHeight(p.x, p.z) - 1);
   text(ctx, `AGL ${Math.round(agl)} m`, CX + 250 * U, tapeY + 118 * U, 12 * U, HUD, 'center', 600);
   drawGuidance(ctx, U, S, view, W, H);
+  drawMinimap(ctx, U, S, W);
+  drawPullUp(ctx, U, S, W, H);
   // Mission panel.
   ctx.fillStyle = PANEL;
   ctx.fillRect(14 * U, 14 * U, 176 * U, 88 * U);
@@ -1875,8 +2022,13 @@ function drawHud(ctx, S, view) {
   text(ctx, `Time ${formatTime(m.time)}`, 26 * U, 56 * U, 14 * U, '#eafff7', 'left', 500);
   text(ctx, `Score ${m.score}`, 26 * U, 76 * U, 14 * U, '#eafff7', 'left', 500);
   text(ctx, `Crashes ${m.crashes}`, 26 * U, 94 * U, 12 * U, HUD, 'left', 500);
-  text(ctx, 'KESTREL RUN', W - 16 * U, 24 * U, 15 * U, HUD, 'right', 700);
-  text(ctx, `${S.view === 'chase' ? 'Chase' : 'Cockpit'} view · C switch · H help`, W - 16 * U, 44 * U, 11 * U, 'rgba(141,255,217,0.75)', 'right', 500);
+  ctx.fillStyle = PANEL;
+  ctx.fillRect(W - 212 * U, 12 * U, 198 * U, 44 * U);
+  ctx.strokeStyle = 'rgba(141,255,217,0.5)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(W - 212 * U, 12 * U, 198 * U, 44 * U);
+  text(ctx, 'KESTREL RUN', W - 24 * U, 26 * U, 15 * U, HUD, 'right', 700);
+  text(ctx, `${S.view === 'chase' ? 'Chase' : 'Cockpit'} view · C switch · H help`, W - 24 * U, 45 * U, 11 * U, 'rgba(141,255,217,0.85)', 'right', 500);
   if (S.mouse) text(ctx, 'MOUSE STEERING', W - 16 * U, 62 * U, 11 * U, AMBER, 'right', 700);
   // Toast banner.
   if (m.toastT > 0 && m.toast) {
@@ -2104,24 +2256,35 @@ function createAudio() {
 
 /* ---------------- deterministic staged scenes ---------------- */
 
-// The four screenshots are deterministic STAGED scenes (?demo=1..4), not a
-// recording of one played run: each scene is a frozen preset rendered live
-// by the game code, with clock and score kept consistent across the scenes
-// so they read as one sortie in order.
+// The four screenshots are STAGED scenes (?demo=1..4) — frozen presets the
+// game renders live, not frames cut from one played flight. They run in
+// sortie order, and every clock and score on screen is one the real rules
+// can produce:
 //
-//   1-cover   0:45   score 0     ring 1 of 10, chase, just airborne
-//   2-rings   1:35   score 400   ring 4 just cleared (+150), chase,
-//                                 next ring ahead
-//   3-landing 2:20   score 880   8 rings done, seconds from touchdown,
-//                                 runway filling the frame, chase
-//   4-cockpit 3:05   score 1180  all 10 rings done, cockpit, final
-//                                 approach to the runway with land ahead;
-//                                 toast matches: rings done, land next
+//   1-cover   0:45  score 0     just airborne, ring 1 ahead, chase
+//   2-rings   1:35  score 554   ring 4 just cleared (+147), chase,
+//                               ring 5 ahead
+//   3-cockpit 3:05  score 1390  all 10 rings done, cockpit, final
+//                               approach with the strip ahead
+//   4-landing 3:21  score 1390  short final, runway filling the frame
 //
-// Ring values are 100 + a bullseye bonus up to 60, so the totals check out:
-// 4 rings = 400, 8 rings = 880, 10 rings = 1180.
+// A ring pays 100 plus a bullseye bonus of 0..60 (RING_BONUS below is the
+// bonus each staged ring earned), so the totals add up: 4 rings = 554,
+// 10 rings = 1390. The +300 landing bonus is only added once the plane
+// has stopped on the runway, so it is not in these frames.
 
 const DEMO_COUNT = 4;
+const RING_BONUS = [
+  34, 21, 52, 47, 28,
+  60, 39, 23, 45, 41,
+];
+
+/** Score after clearing n rings, from the real rules (100 + bonus each). */
+function scoreForRings(n) {
+  let total = 0;
+  for (let i = 0; i < n; i += 1) total += SCORE.RING + RING_BONUS[i];
+  return total;
+}
 
 function placePlane(S, x, y, z, yaw, pitch, roll, speed, thr) {
   const p = S.plane;
@@ -2132,10 +2295,10 @@ function placePlane(S, x, y, z, yaw, pitch, roll, speed, thr) {
   S.cam.roll = roll * 0.55;
 }
 
-function baseState(S, time, score, cleared) {
+function baseState(S, time, cleared) {
   const m = S.mission;
   m.time = time;
-  m.score = score;
+  m.score = scoreForRings(cleared);
   m.cleared = cleared;
   m.running = true;
   m.done = false;
@@ -2153,13 +2316,13 @@ function baseState(S, time, score, cleared) {
 
 function applyDemo(S, n) {
   if (n === 1) {
-    baseState(S, 45, 0, 0);
+    baseState(S, 45, 0);
     // 3.4 km short of ring 1, climbing away from the strip.
     placePlane(S, 30, 215, -1400, 0.005, -0.02, 0.04, 68, 0.68);
     return;
   }
   if (n === 2) {
-    baseState(S, 95, 400, 4);
+    baseState(S, 95, 4);
     const target = S.course[4];
     const from = S.course[3];
     const yaw = Math.atan2(target.x - from.x, target.z - from.z);
@@ -2174,28 +2337,24 @@ function applyDemo(S, n) {
       target.z - Math.cos(yaw) * 420,
       yaw, 0.0, 0.3, 79, 0.75,
     );
-    S.mission.toast = 'Ring 4 cleared +150';
+    S.mission.toast = `Ring 4 cleared +${SCORE.RING + RING_BONUS[3]}`;
     S.mission.toastT = 2.6;
     return;
   }
   if (n === 3) {
-    baseState(S, 140, 880, 8);
-    // Seconds from touchdown: 260 m out on the centreline, 14 m above the
-    // strip, so the runway fills the frame ahead of the plane.
-    placePlane(S, 10, 26, -260, 0, -0.03, 0, 46, 0.3);
-    S.demoTarget = { x: 0, y: 16, z: 0, kind: 'runway' };
-    S.demoLabel = 'Land on the runway';
-    S.mission.toast = 'Final approach';
+    // Cockpit, all 10 rings done, on final approach with the strip ahead.
+    baseState(S, 185, 10);
+    placePlane(S, 24, 118, -880, 0, -0.02, 0.05, 62, 0.62);
+    S.view = 'cockpit';
+    S.mission.toast = 'All rings done — land on the runway';
     S.mission.toastT = 2.6;
     return;
   }
-  // Demo 4: cockpit, all 10 rings done, on final approach to the runway
-  // with the harbour strip and land ahead — no ring left in front of the
-  // plane, so the toast (rings done, land next) matches the frame.
-  baseState(S, 185, 1180, 10);
-  placePlane(S, 24, 118, -880, 0, -0.02, 0.05, 62, 0.62);
-  S.view = 'cockpit';
-  S.mission.toast = 'All rings done — land on the runway';
+  // Demo 4: short final — 260 m out on the centreline, 14 m above the
+  // strip, so the runway fills the frame ahead of the plane.
+  baseState(S, 201, 10);
+  placePlane(S, 10, 26, -260, 0, -0.03, 0, 46, 0.3);
+  S.mission.toast = 'Short final';
   S.mission.toastT = 2.6;
 }
 
